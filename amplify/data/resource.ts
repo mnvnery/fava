@@ -14,8 +14,14 @@ const schema = a.schema({
     .authorization((allow) => [allow.owner()]),
   KnowledgeBase: a
     .model({
+      medicineClass: a.string(),
+      drug: a.string(),
       phenotype: a.string(),
-    }),
+      genotype: a.string(),
+      summary: a.string(),
+      guideline: a.string()
+    })
+    .authorization(allow => [allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
