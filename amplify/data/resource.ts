@@ -12,6 +12,10 @@ const schema = a.schema({
       content: a.string(),
     })
     .authorization((allow) => [allow.owner()]),
+  KnowledgeBase: a
+    .model({
+      phenotype: a.string(),
+    }),
 });
 
 export type Schema = ClientSchema<typeof schema>;
