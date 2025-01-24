@@ -1,86 +1,156 @@
 "use client";
 
-import { useAuthenticator } from "@aws-amplify/ui-react";
-import { useState, useEffect } from "react";
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "@/amplify/data/resource";
-import { Amplify } from "aws-amplify";
-import outputs from "@/amplify_outputs.json";
-import "@aws-amplify/ui-react/styles.css";
+import { useState } from "react";
 
-Amplify.configure(outputs);
-
-const client = generateClient<Schema>();
-
-export default function PopulateKnowledgeBase() {
+export default function FetchRecommendations() {
   const [status, setStatus] = useState("Idle");
 
   // List of gene-drug pairs
   const geneDrugPairs = [
-    { gene: "CYP2B6", drug: "efavirenz" },
-    { gene: "CYP2C19", drug: "amitriptyline" },
-    { gene: "CYP2C19", drug: "citalopram" },
-    // Add all other pairs...
-  ];
+    // { gene: "CYP2B6", drug: "efavirenz" },
+    // { gene: "CYP2C19", drug: "amitriptyline" },
+     { gene: "CYP2C19", drug: "citalopram" },
+    // { gene: "CYP2C19", drug: "clopidogrel" },
+    // { gene: "CYP2C19", drug: "escitalopram" },
+    // { gene: "CYP2C19", drug: "lansoprazole" },
+    // { gene: "CYP2C19", drug: "omeprazole" },
+    // { gene: "CYP2C19", drug: "pantoprazole" },
+    // { gene: "CYP2C19", drug: "sertraline" },
+    // { gene: "CYP2C19", drug: "voriconazole" },
+    // { gene: "CYP2C9", drug: "celecoxib" },
+    // { gene: "CYP2C9", drug: "flurbiprofen" },
+    // { gene: "CYP2C9", drug: "fluvastatin" },
+    // { gene: "CYP2C9", drug: "fosphenytoin" },
+    // { gene: "CYP2C9", drug: "ibuprofen" },
+    // { gene: "CYP2C9", drug: "lornoxicam" },
+    // { gene: "CYP2C9", drug: "meloxicam" },
+    // { gene: "CYP2C9", drug: "phenytoin" },
+    // { gene: "CYP2C9", drug: "piroxicam" },
+    // { gene: "CYP2C9", drug: "siponimod" },
+    // { gene: "CYP2C9", drug: "tenoxicam" },
+    // { gene: "CYP2C9", drug: "warfarin" },
+    // { gene: "CYP2D6", drug: "amitriptyline" },
+    // { gene: "CYP2D6", drug: "atomoxetine" },
+    // { gene: "CYP2D6", drug: "codeine" },
+    // { gene: "CYP2D6", drug: "nortriptyline" },
+    // { gene: "CYP2D6", drug: "ondansetron" },
+    // { gene: "CYP2D6", drug: "paroxetine" },
+    // { gene: "CYP2D6", drug: "pitolisant" },
+    // { gene: "CYP2D6", drug: "tamoxifen" },
+    // { gene: "CYP2D6", drug: "tramadol" },
+    // { gene: "CYP2D6", drug: "tropisetron" },
+    // { gene: "CYP2D6", drug: "vortioxetine" },
+    // { gene: "CYP3A5", drug: "tacrolimus" },
+    // { gene: "SLCO1B1", drug: "atorvastatin" },
+    // { gene: "SLCO1B1", drug: "fluvastatin" },
+    // { gene: "SLCO1B1", drug: "lovastatin" },
+    // { gene: "SLCO1B1", drug: "pitavastatin" },
+    // { gene: "SLCO1B1", drug: "pravastatin" },
+    // { gene: "SLCO1B1", drug: "rosuvastatin" },
+    // { gene: "SLCO1B1", drug: "simvastatin" },
+    // { gene: "VKORC1", drug: "warfarin" }
+];
 
-  // Fetch phenotypes for a given gene
-  async function fetchPhenotypes(gene: string) {
+
+  // Fetch the `drugId` for a specific drug
+  async function fetchDrugId(drug: string) {
     const response = await fetch(
-      `https://api.cpicpgx.org/v1/gene_result?genesymbol=eq.${gene}`
+      `https://api.cpicpgx.org/v1/drug?name=eq.${encodeURIComponent(drug)}`
     );
-    if (!response.ok) throw new Error(`Error fetching phenotypes for ${gene}`);
-    return response.json();
+    if (!response.ok) throw new Error(`Error fetching drugId for ${drug}`);
+    const data = await response.json();
+    if (data.length === 0) throw new Error(`No drugId found for ${drug}`);
+    return data[0].drugid; // Assuming `drugid` is the correct field
   }
 
-  // Fetch guidelines for a given gene-drug pair
-  async function fetchGuidelines(gene: string, drug: string) {
+  // Filter out duplicates by phenotype
+function deduplicateLookupKeys(lookupKeys: Array<{ phenotype: string; lookupKey: Record<string, string> }>) {
+  const uniquePhenotypes = new Set();
+  return lookupKeys.filter(({ phenotype }) => {
+    if (uniquePhenotypes.has(phenotype)) {
+      return false; // Skip if the phenotype is already in the Set
+    }
+    uniquePhenotypes.add(phenotype);
+    return true; // Include if it's unique
+  });
+}
+
+
+  // Fetch all `lookupKey` values for a gene
+  async function fetchLookupKeys(gene: string) {
     const response = await fetch(
-      `https://api.cpicpgx.org/v1/pair_view?genesymbol=eq.${gene}&drugid=like.*${drug}*`
+      `https://api.cpicpgx.org/v1/diplotype?genesymbol=eq.${gene}&select=lookupkey,generesult`
+    );
+    if (!response.ok) throw new Error(`Error fetching lookupKeys for ${gene}`);
+    const data = await response.json();
+  
+    if (data.length === 0) throw new Error(`No lookupKeys found for ${gene}`);
+  
+    // Deduplicate based on phenotype
+    const deduplicatedKeys = deduplicateLookupKeys(
+      data.map((item: any) => ({
+        phenotype: item.generesult,
+        lookupKey: item.lookupkey,
+      }))
+    );
+  
+    // console.log(`Deduplicated LookupKeys for ${gene}:`, deduplicatedKeys);
+    return deduplicatedKeys;
+  }
+  
+
+  // Fetch recommendations for a specific drugId and lookupKey
+  async function fetchRecommendations(drugId: string, lookupKey: Record<string, string>) {
+    const lookupKeyJSON = encodeURIComponent(JSON.stringify(lookupKey));
+    const response = await fetch(
+      `https://api.cpicpgx.org/v1/recommendation?select=drug(name),guideline(name),implications,drugrecommendation,classification,comments,phenotypes,lookupkey&drugid=eq.${drugId}&lookupkey=cs.${lookupKeyJSON}`
     );
     if (!response.ok)
-      throw new Error(`Error fetching guidelines for ${gene}-${drug}`);
+      throw new Error(
+        `Error fetching recommendations for drugId ${drugId} with lookupKey ${JSON.stringify(
+          lookupKey
+        )}`
+      );
     return response.json();
   }
 
-  // Main function to populate the KnowledgeBase table
-  async function populateTable() {
-    setStatus("Populating...");
+  // Main function to fetch and print results
+  async function fetchAndPrintResults() {
+    setStatus("Fetching...");
     try {
       for (const { gene, drug } of geneDrugPairs) {
-        // Fetch phenotypes and guidelines
-        const phenotypes = await fetchPhenotypes(gene);
-        console.log("Phenotypes:", phenotypes); // Log inside the loop
-  
-        const guidelines = await fetchGuidelines(gene, drug);
-        console.log("Guidelines:", guidelines); // Log inside the loop
-  
-        // Transform the data to match your schema
-        const entry = {
-          medicineClass: drug,
-          drug,
-          genotype: gene,
-          phenotype: phenotypes.map((p) => p.result).join(", "),
-          summary: `Guidelines for ${gene} and ${drug}`,
-          guideline: guidelines.map((g) => g.guideline_url).join(", "),
-        };
-  
-        console.log("Inserted Entry:", entry); // Log before inserting into the database
-  
-        // Create the entry in KnowledgeBase
-        await client.models.KnowledgeBase.create(entry);
+        console.log(`Processing ${gene} - ${drug}`);
+
+        // Step 1: Fetch the drugId
+        const drugId = await fetchDrugId(drug);
+        console.log(`DrugId for ${drug}:`, drugId);
+
+        // Step 2: Fetch all lookupKeys for the gene
+        const lookupKeys = await fetchLookupKeys(gene);
+        console.log(`LookupKeys for ${gene}:`, lookupKeys);
+
+        // Step 3: Fetch recommendations for each lookupKey
+        for (const { phenotype, lookupKey } of lookupKeys) {
+          // console.log(`Fetching recommendations for phenotype: ${phenotype}`);
+
+          const recommendations = await fetchRecommendations(drugId, lookupKey);
+          console.log(
+            `Recommendations for ${gene} - ${drug} - ${phenotype}:`,
+            recommendations
+          );
+        }
       }
       setStatus("Completed!");
     } catch (error) {
-      console.error("Error populating KnowledgeBase:", error);
+      console.error("Error during fetch process:", error);
       setStatus("Error");
     }
   }
-  
 
   return (
     <main>
-      <h1>Populate KnowledgeBase</h1>
-      <button onClick={populateTable}>Start Population</button>
+      <h1>Fetch Recommendations</h1>
+      <button onClick={fetchAndPrintResults}>Start Fetching</button>
       <p>Status: {status}</p>
     </main>
   );
